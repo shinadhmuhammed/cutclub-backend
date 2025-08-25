@@ -14,7 +14,7 @@ app.use(express.json());
 app.use(cors({
    origin: [
     "http://localhost:8080",
-    "https://shavesync-pro.vercel.app"
+    "https://cutclub.vercel.app/"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true, 
