@@ -1,7 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import cors from "cors";   // 👈 import cors
+import cors from "cors"; // 👈 import cors
 import router from "./src/routes/userRoutes.js";
 
 dotenv.config();
@@ -9,21 +9,20 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-
 app.use(express.json());
-app.use(cors({
-   origin: [
-    "http://localhost:8080",
-    "https://cutclub.vercel.app/"
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true, 
-}));
-
+app.use(
+  cors({
+    origin: ["http://localhost:8080", "https://cutclub.vercel.app/"],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 app.use("/user", router);
 
-mongoose.connect(process.env.MONGO_URI)
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB Atlas connected");
     app.listen(PORT, () =>
