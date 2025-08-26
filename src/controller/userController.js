@@ -140,25 +140,29 @@ export const getServicesForEachStaffForToday = async (req, res) => {
 
 export const getAllServices = async (req, res) => {
   try {
-    const page = parseInt(req.query.page)  || 1;
+    const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
 
-    const total = await Service.countDocuments();
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    // Fetch services with pagination
-    const allServices = await Service.find({})
+    const query = { date: { $gte: sevenDaysAgo } };
+
+    const total = await Service.countDocuments(query);
+
+    const allServices = await Service.find(query)
       .populate("userId", "username email")
       .skip((page - 1) * limit)
       .limit(limit)
-      .sort({ createdAt: -1 }); // optional: latest first
+      .sort({ createdAt: -1 });
 
     if (!allServices || allServices.length === 0)
-      return res.status(404).json({ message: "Services not found!" });
+      return res.status(404).json({ message: "No services found in last 7 days!" });
 
     res.status(200).json({
-      message: "Services fetched successfully",
+      message: "Services (last 7 days) fetched successfully",
       services: allServices,
-      total, // total number of services for frontend pagination
+      total,
       page,
       limit,
     });
@@ -167,6 +171,110 @@ export const getAllServices = async (req, res) => {
     res.status(500).json({ error: "Server error, could not fetch services" });
   }
 };
+
+export const getGraphResult = async (req, res) => {
+  try {
+    const { date, startDate, endDate } = req.query;
+
+    let start, end;
+
+    if (date) {
+      // ✅ single date filter
+      const selected = new Date(date);
+      start = new Date(selected.setHours(0, 0, 0, 0));
+      end = new Date(selected.setHours(23, 59, 59, 999));
+    } else if (startDate && endDate) {
+      // ✅ custom range filter
+      start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+    } else {
+      // ✅ default last 7 days
+      end = new Date();
+      start = new Date();
+      start.setDate(end.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+    }
+
+    const results = await Service.aggregate([
+      {
+        $match: {
+          date: { $gte: start, $lte: end },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$date" },
+            month: { $month: "$date" },
+            day: { $dayOfMonth: "$date" },
+          },
+          totalAmount: { $sum: "$amount" },
+          count: { $sum: 1 },
+          staffIds: { $addToSet: "$staffId" }, // ✅ track unique staff for quickStats
+        },
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 },
+      },
+    ]);
+
+    const report = [];
+
+    // ✅ if it's a single date → return just that day
+    if (date) {
+      const d = new Date(date);
+      const found = results.find(
+        (r) =>
+          r._id.year === d.getFullYear() &&
+          r._id.month === d.getMonth() + 1 &&
+          r._id.day === d.getDate()
+      );
+
+      report.push({
+        date: d.toISOString().split("T")[0],
+        totalAmount: found ? found.totalAmount : 0,
+        count: found ? found.count : 0,
+        staffIds: found ? found.staffIds : [],
+      });
+    } else {
+      // ✅ range (7 days or custom)
+      const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+
+      for (let i = 0; i <= diffDays; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+
+        const found = results.find(
+          (r) =>
+            r._id.year === d.getFullYear() &&
+            r._id.month === d.getMonth() + 1 &&
+            r._id.day === d.getDate()
+        );
+
+        report.push({
+          date: d.toISOString().split("T")[0],
+          totalAmount: found ? found.totalAmount : 0,
+          count: found ? found.count : 0,
+          staffIds: found ? found.staffIds : [],
+        });
+      }
+    }
+
+    res.status(200).json({
+      message: "Report fetched successfully",
+      data: report,
+    });
+  } catch (err) {
+    console.error("Error fetching graph result:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+
+
+
 
 
 export const createExpenses = async (req, res) => {

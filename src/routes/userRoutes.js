@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addServices, createExpenses, getAllServices, getEmployees, getExpenses, getMonthlyProfit, getServicesForEachStaffForToday, login, signup } from "../controller/userController.js";
+import { addServices, createExpenses, getAllServices, getEmployees, getExpenses, getGraphResult, getMonthlyProfit, getServicesForEachStaffForToday, login, signup } from "../controller/userController.js";
 import { authMiddleware } from "../Middleware/auth.middleware.js";
 
 const router = Router();
@@ -7,6 +7,7 @@ const router = Router();
 router.get("/employees",getEmployees)
 router.get("/services",authMiddleware,getServicesForEachStaffForToday)
 router.get("/all-services",authMiddleware,getAllServices)
+router.get("/graph-services",authMiddleware,getGraphResult)
 router.get("/all-expenses",authMiddleware,getExpenses)
 router.get("/profit",authMiddleware,getMonthlyProfit)
 
