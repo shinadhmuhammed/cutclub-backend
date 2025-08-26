@@ -142,27 +142,91 @@ export const getAllServices = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
+    const { startDate, endDate, paymentType } = req.query;
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    let match = {};
 
-    const query = { date: { $gte: sevenDaysAgo } };
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
 
-    const total = await Service.countDocuments(query);
+      match.date = { $gte: start, $lte: end };
+    } else {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      match.date = { $gte: sevenDaysAgo };
+    }
 
-    const allServices = await Service.find(query)
-      .populate("userId", "username email")
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .sort({ createdAt: -1 });
+    if (paymentType && paymentType !== "all") {
+      match.paymentType = paymentType;
+    }
 
-    if (!allServices || allServices.length === 0)
-      return res.status(404).json({ message: "No services found in last 7 days!" });
+    const pipeline = [
+      { $match: match },
+
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "user",
+        },
+      },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+
+      { $sort: { createdAt: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+
+      {
+        $project: {
+          _id: 1,
+          type: 1,
+          amount: 1,
+          paymentType: 1,
+          date: 1,
+          createdAt: 1,
+          "user.username": 1,
+          "user.email": 1,
+        },
+      },
+    ];
+
+    const services = await Service.aggregate(pipeline);
+
+    // ✅ Count documents for pagination
+    const total = await Service.countDocuments(match);
+
+    // ✅ Total Amount (filtered or last 7 days)
+    const totalAmountAgg = await Service.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: "$amount" },
+        },
+      },
+    ]);
+
+    const totalAmount =
+      totalAmountAgg.length > 0 ? totalAmountAgg[0].totalAmount : 0;
+
+    if (!services || services.length === 0) {
+      return res.status(404).json({
+        message: "No services found!",
+        total: 0,
+        totalAmount: 0,
+        page,
+        limit,
+      });
+    }
 
     res.status(200).json({
-      message: "Services (last 7 days) fetched successfully",
-      services: allServices,
+      message: "Services fetched successfully",
+      services,
       total,
+      totalAmount,
       page,
       limit,
     });
@@ -171,6 +235,7 @@ export const getAllServices = async (req, res) => {
     res.status(500).json({ error: "Server error, could not fetch services" });
   }
 };
+
 
 export const getGraphResult = async (req, res) => {
   try {
@@ -272,11 +337,6 @@ export const getGraphResult = async (req, res) => {
   }
 };
 
-
-
-
-
-
 export const createExpenses = async (req, res) => {
   try {
     const expense = new expenseModel(req.body);
@@ -287,18 +347,16 @@ export const createExpenses = async (req, res) => {
   }
 };
 
-
 export const getExpenses = async (req, res) => {
   try {
-    const expense = await expenseModel.find()
-      if (!expense)
+    const expense = await expenseModel.find();
+    if (!expense)
       return res.status(404).json({ message: "expenses not found..!!" });
     res.status(201).json(expense);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
-
 
 export const getMonthlyProfit = async (req, res) => {
   try {
@@ -323,7 +381,7 @@ export const getMonthlyProfit = async (req, res) => {
         $match: {
           date: {
             $gte: new Date(yearNum, monthNum - 1, 1), // first day
-            $lt: new Date(yearNum, monthNum, 1), 
+            $lt: new Date(yearNum, monthNum, 1),
           },
         },
       },
