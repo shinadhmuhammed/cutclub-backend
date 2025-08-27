@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addServices, createExpenses, getAllServices, getEmployees, getExpenses, getGraphResult, getMonthlyProfit, getServicesForEachStaffForToday, login, signup } from "../controller/userController.js";
+import { addServices, changeStatusOfStaff, createExpenses, getAllServices, getEmployees, getExpenses, getGraphResult, getMonthlyProfit, getServicesForEachStaffForToday, login, signup } from "../controller/userController.js";
 import { authMiddleware } from "../Middleware/auth.middleware.js";
 
 const router = Router();
@@ -16,5 +16,9 @@ router.post("/signup", signup);
 router.post("/login", login);
 router.post("/services",authMiddleware, addServices);
 router.post("/expenses",authMiddleware, createExpenses);
+
+
+router.patch("/status/:id",authMiddleware, changeStatusOfStaff);
+
 
 export default router;

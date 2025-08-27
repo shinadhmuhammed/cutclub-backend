@@ -47,6 +47,11 @@ export const login = async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ error: "Invalid credentials" });
+    if (user.status === "inactive") {
+      return res
+        .status(403)
+        .json({ error: "Your account is inactive. Please contact admin." });
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
@@ -146,6 +151,7 @@ export const getAllServices = async (req, res) => {
 
     let match = {};
 
+    // ✅ Date filtering
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -158,13 +164,14 @@ export const getAllServices = async (req, res) => {
       match.date = { $gte: sevenDaysAgo };
     }
 
+    // ✅ PaymentType filtering (if not "all")
     if (paymentType && paymentType !== "all") {
       match.paymentType = paymentType;
     }
 
+    // --- Main services pipeline ---
     const pipeline = [
       { $match: match },
-
       {
         $lookup: {
           from: "users",
@@ -174,11 +181,9 @@ export const getAllServices = async (req, res) => {
         },
       },
       { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
-
       { $sort: { createdAt: -1 } },
       { $skip: (page - 1) * limit },
       { $limit: limit },
-
       {
         $project: {
           _id: 1,
@@ -195,28 +200,43 @@ export const getAllServices = async (req, res) => {
 
     const services = await Service.aggregate(pipeline);
 
-    // ✅ Count documents for pagination
+    // --- Pagination count ---
     const total = await Service.countDocuments(match);
 
-    // ✅ Total Amount (filtered or last 7 days)
+    // --- Total overall amount ---
     const totalAmountAgg = await Service.aggregate([
+      { $match: match },
+      { $group: { _id: null, totalAmount: { $sum: "$amount" } } },
+    ]);
+    const totalAmount =
+      totalAmountAgg.length > 0 ? totalAmountAgg[0].totalAmount : 0;
+
+    // --- Split by payment type ---
+    const paymentSplitAgg = await Service.aggregate([
       { $match: match },
       {
         $group: {
-          _id: null,
-          totalAmount: { $sum: "$amount" },
+          _id: "$paymentType",
+          total: { $sum: "$amount" },
         },
       },
     ]);
 
-    const totalAmount =
-      totalAmountAgg.length > 0 ? totalAmountAgg[0].totalAmount : 0;
+    // Convert array → object { online: X, cash: Y }
+    const paymentSplit = paymentSplitAgg.reduce(
+      (acc, cur) => {
+        acc[cur._id] = cur.total;
+        return acc;
+      },
+      { online: 0, cash: 0 }
+    );
 
     if (!services || services.length === 0) {
       return res.status(404).json({
         message: "No services found!",
         total: 0,
         totalAmount: 0,
+        paymentSplit,
         page,
         limit,
       });
@@ -227,6 +247,7 @@ export const getAllServices = async (req, res) => {
       services,
       total,
       totalAmount,
+      paymentSplit, // ✅ includes { online, cash }
       page,
       limit,
     });
@@ -347,12 +368,63 @@ export const createExpenses = async (req, res) => {
   }
 };
 
+export const changeStatusOfStaff = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!["active", "inactive"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status value" });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "Staff member not found" });
+    }
+
+    res.status(200).json({
+      message: `Staff status updated to ${status} ✅`,
+      user: updatedUser,
+    });
+  } catch (err) {
+    console.error("Error changing staff status:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
 export const getExpenses = async (req, res) => {
   try {
-    const expense = await expenseModel.find();
-    if (!expense)
-      return res.status(404).json({ message: "expenses not found..!!" });
-    res.status(201).json(expense);
+    let { page = 1, limit = 10, month, year } = req.query;
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (month && year) {
+      filter.month = parseInt(month);
+      filter.year = parseInt(year);
+    }
+
+    const expenses = await expenseModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await expenseModel.countDocuments(filter);
+
+    res.status(200).json({
+      expenses,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

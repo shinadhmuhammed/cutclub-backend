@@ -10,10 +10,16 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
-    role:{
-      type:String,
-      required:true,
-      enum:['staff','admin']
+    role: {
+      type: String,
+      required: true,
+      enum: ["staff", "admin"],
+    },
+    status: {
+      type: String,
+      required: true,
+      default: "active",
+      enum: ["active", "inactive"],
     },
     password: { type: String, required: true, minlength: 6 },
   },
