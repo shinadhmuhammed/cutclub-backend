@@ -325,7 +325,6 @@ export const getGraphResult = async (req, res) => {
         staffIds: found ? found.staffIds : [],
       });
     } else {
-      // ✅ range (7 days or custom)
       const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
 
       for (let i = 0; i <= diffDays; i++) {

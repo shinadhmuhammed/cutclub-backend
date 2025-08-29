@@ -23,3 +23,5 @@ export const authMiddleware = (req, res, next) => {
     res.status(500).json({ error: "Authentication failed" });
   }
 };
+
+

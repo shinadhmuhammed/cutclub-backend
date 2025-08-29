@@ -4,7 +4,7 @@ const serviceSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User", 
+      ref: "User",
       required: true,
     },
     type: {
@@ -16,19 +16,24 @@ const serviceSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
-    paymentType:{
-      type:String,
-      required:true,
-      enum:["online","cash"]
+    paymentType: {
+      type: String,
+      required: true,
+      enum: ["online", "cash"],
     },
     date: {
       type: Date,
       required: true,
       default: Date.now,
+      index: true, 
     },
   },
-  { timestamps: true } 
+  { timestamps: true }
 );
+
+
+serviceSchema.index({ date: -1 }); 
+serviceSchema.index({ userId: 1, date: -1 }); 
 
 const Service = mongoose.model("Service", serviceSchema);
 export default Service;
