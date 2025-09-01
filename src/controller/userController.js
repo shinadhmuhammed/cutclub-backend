@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 import Service from "../models/serviceModal.js";
 import expenseModel from "../models/expenseModel.js";
+import Water from "../models/waterModel.js";
 
 export const signup = async (req, res) => {
   try {
@@ -37,15 +38,15 @@ export const signup = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { name, password, role } = req.body;
 
-    if (!email || !password || !role) {
+    if (!name || !password || !role) {
       return res
         .status(400)
-        .json({ error: "Email, password and role are required" });
+        .json({ error: "name, password and role are required" });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ username: name });
     if (!user) return res.status(400).json({ error: "Invalid credentials" });
     if (user.status === "inactive") {
       return res
@@ -257,7 +258,6 @@ export const getAllServices = async (req, res) => {
   }
 };
 
-
 export const getGraphResult = async (req, res) => {
   try {
     const { date, startDate, endDate } = req.query;
@@ -265,22 +265,20 @@ export const getGraphResult = async (req, res) => {
     let start, end;
 
     if (date) {
-      // ✅ single date filter
       const selected = new Date(date);
-      start = new Date(selected.setHours(0, 0, 0, 0));
-      end = new Date(selected.setHours(23, 59, 59, 999));
+      start = new Date(Date.UTC(selected.getFullYear(), selected.getMonth(), selected.getDate(), 0, 0, 0));
+      end = new Date(Date.UTC(selected.getFullYear(), selected.getMonth(), selected.getDate(), 23, 59, 59, 999));
     } else if (startDate && endDate) {
-      // ✅ custom range filter
-      start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
+      const s = new Date(startDate);
+      const e = new Date(endDate);
+      start = new Date(Date.UTC(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0));
+      end = new Date(Date.UTC(e.getFullYear(), e.getMonth(), e.getDate(), 23, 59, 59, 999));
     } else {
-      // ✅ default last 7 days
-      end = new Date();
-      start = new Date();
-      start.setDate(end.getDate() - 6);
-      start.setHours(0, 0, 0, 0);
+      const today = new Date();
+      end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999));
+      const startTemp = new Date();
+      startTemp.setDate(today.getDate() - 6);
+      start = new Date(Date.UTC(startTemp.getFullYear(), startTemp.getMonth(), startTemp.getDate(), 0, 0, 0));
     }
 
     const results = await Service.aggregate([
@@ -292,59 +290,39 @@ export const getGraphResult = async (req, res) => {
       {
         $group: {
           _id: {
-            year: { $year: "$date" },
-            month: { $month: "$date" },
-            day: { $dayOfMonth: "$date" },
+            day: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$date",
+                timezone: "Asia/Kolkata", // Change this to your timezone
+              },
+            },
           },
           totalAmount: { $sum: "$amount" },
           count: { $sum: 1 },
-          staffIds: { $addToSet: "$staffId" }, // ✅ track unique staff for quickStats
+          staffIds: { $addToSet: "$staffId" },
         },
       },
       {
-        $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 },
+        $sort: { "_id.day": 1 },
       },
     ]);
 
+    // Generate full range of dates to include zeros for missing days
     const report = [];
+    const startDateObj = new Date(start);
+    const endDateObj = new Date(end);
 
-    // ✅ if it's a single date → return just that day
-    if (date) {
-      const d = new Date(date);
-      const found = results.find(
-        (r) =>
-          r._id.year === d.getFullYear() &&
-          r._id.month === d.getMonth() + 1 &&
-          r._id.day === d.getDate()
-      );
+    for (let d = new Date(startDateObj); d <= endDateObj; d.setDate(d.getDate() + 1)) {
+      const dayStr = d.toISOString().split("T")[0]; // YYYY-MM-DD format
+      const found = results.find((r) => r._id.day === dayStr);
 
       report.push({
-        date: d.toISOString().split("T")[0],
+        date: dayStr,
         totalAmount: found ? found.totalAmount : 0,
         count: found ? found.count : 0,
         staffIds: found ? found.staffIds : [],
       });
-    } else {
-      const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-
-      for (let i = 0; i <= diffDays; i++) {
-        const d = new Date(start);
-        d.setDate(start.getDate() + i);
-
-        const found = results.find(
-          (r) =>
-            r._id.year === d.getFullYear() &&
-            r._id.month === d.getMonth() + 1 &&
-            r._id.day === d.getDate()
-        );
-
-        report.push({
-          date: d.toISOString().split("T")[0],
-          totalAmount: found ? found.totalAmount : 0,
-          count: found ? found.count : 0,
-          staffIds: found ? found.staffIds : [],
-        });
-      }
     }
 
     res.status(200).json({
@@ -353,9 +331,10 @@ export const getGraphResult = async (req, res) => {
     });
   } catch (err) {
     console.error("Error fetching graph result:", err);
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 };
+
 
 export const createExpenses = async (req, res) => {
   try {
@@ -473,5 +452,49 @@ export const getMonthlyProfit = async (req, res) => {
   } catch (err) {
     console.error("Error calculating monthly profit:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const pourWater = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const userId = req.user.id;
+
+    if (!["yes", "no"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    // Normalize date to today (midnight)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const log = await Water.findOneAndUpdate(
+      { userId, date: today },
+      { status, date: today },
+      { new: true, upsert: true }
+    );
+
+    res.json({ success: true, log });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const getWaterDetails = async (req, res) => {
+  try {
+    const waterDetails = await Water.find({}).populate("userId", "username");
+
+    return res.status(200).json({
+      success: true,
+      message: "Water logs fetched successfully",
+      data: waterDetails,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 };
