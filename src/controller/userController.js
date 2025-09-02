@@ -4,6 +4,7 @@ import User from "../models/userModel.js";
 import Service from "../models/serviceModal.js";
 import expenseModel from "../models/expenseModel.js";
 import Water from "../models/waterModel.js";
+import mongoose from "mongoose";
 
 export const signup = async (req, res) => {
   try {
@@ -266,19 +267,61 @@ export const getGraphResult = async (req, res) => {
 
     if (date) {
       const selected = new Date(date);
-      start = new Date(Date.UTC(selected.getFullYear(), selected.getMonth(), selected.getDate(), 0, 0, 0));
-      end = new Date(Date.UTC(selected.getFullYear(), selected.getMonth(), selected.getDate(), 23, 59, 59, 999));
+      start = new Date(
+        Date.UTC(
+          selected.getFullYear(),
+          selected.getMonth(),
+          selected.getDate(),
+          0,
+          0,
+          0
+        )
+      );
+      end = new Date(
+        Date.UTC(
+          selected.getFullYear(),
+          selected.getMonth(),
+          selected.getDate(),
+          23,
+          59,
+          59,
+          999
+        )
+      );
     } else if (startDate && endDate) {
       const s = new Date(startDate);
       const e = new Date(endDate);
-      start = new Date(Date.UTC(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0));
-      end = new Date(Date.UTC(e.getFullYear(), e.getMonth(), e.getDate(), 23, 59, 59, 999));
+      start = new Date(
+        Date.UTC(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0)
+      );
+      end = new Date(
+        Date.UTC(e.getFullYear(), e.getMonth(), e.getDate(), 23, 59, 59, 999)
+      );
     } else {
       const today = new Date();
-      end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999));
+      end = new Date(
+        Date.UTC(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          23,
+          59,
+          59,
+          999
+        )
+      );
       const startTemp = new Date();
       startTemp.setDate(today.getDate() - 6);
-      start = new Date(Date.UTC(startTemp.getFullYear(), startTemp.getMonth(), startTemp.getDate(), 0, 0, 0));
+      start = new Date(
+        Date.UTC(
+          startTemp.getFullYear(),
+          startTemp.getMonth(),
+          startTemp.getDate(),
+          0,
+          0,
+          0
+        )
+      );
     }
 
     const results = await Service.aggregate([
@@ -313,7 +356,11 @@ export const getGraphResult = async (req, res) => {
     const startDateObj = new Date(start);
     const endDateObj = new Date(end);
 
-    for (let d = new Date(startDateObj); d <= endDateObj; d.setDate(d.getDate() + 1)) {
+    for (
+      let d = new Date(startDateObj);
+      d <= endDateObj;
+      d.setDate(d.getDate() + 1)
+    ) {
       const dayStr = d.toISOString().split("T")[0]; // YYYY-MM-DD format
       const found = results.find((r) => r._id.day === dayStr);
 
@@ -334,7 +381,6 @@ export const getGraphResult = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 export const createExpenses = async (req, res) => {
   try {
@@ -496,5 +542,49 @@ export const getWaterDetails = async (req, res) => {
       success: false,
       message: "Internal server error",
     });
+  }
+};
+
+
+
+export const getUserMonthlyTotals = async (req, res) => {
+  try {
+    const { id } = req.params; 
+    console.log(id,'hi id-=-==')
+
+    const result = await Service.aggregate([
+      {
+        $match: { userId: new mongoose.Types.ObjectId(id) },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$date" },
+            month: { $month: "$date" },
+          },
+          totalAmount: { $sum: "$amount" },
+        },
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1 },
+      },
+    ]);
+
+    const formatted = result.map((item) => {
+      const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+      ];
+
+      return {
+        month: monthNames[item._id.month - 1],
+        year: item._id.year,
+        totalAmount: item.totalAmount,
+      };
+    });
+    res.json({ success: true, data: formatted });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: "Server Error" });
   }
 };
